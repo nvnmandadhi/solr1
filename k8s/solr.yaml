@@ -1,0 +1,223 @@
+---
+apiVersion: "policy/v1beta1"
+kind: "PodDisruptionBudget"
+metadata:
+  name: "solr"
+  labels:
+    app.kubernetes.io/name: solr
+    app.kubernetes.io/instance: solr
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: solr-1.5.0
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "solr"
+      app.kubernetes.io/instance: "solr"
+      app.kubernetes.io/component: "server"
+  maxUnavailable: 1
+---
+apiVersion: "v1"
+kind: "ConfigMap"
+metadata:
+  name: "solr-config-map"
+  labels:
+    app.kubernetes.io/name: solr
+    app.kubernetes.io/instance: solr
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: solr-1.5.0
+data:
+  solr.xml: |
+    <?xml version="1.0" encoding="UTF-8" ?>
+    <solr>
+      <solrcloud>
+        <str name="host">${host:}</str>
+        <int name="hostPort">${jetty.port:8983}</int>
+        <str name="hostContext">${hostContext:solr}</str>
+        <bool name="genericCoreNodeNames">${genericCoreNodeNames:true}</bool>
+        <int name="zkClientTimeout">${zkClientTimeout:30000}</int>
+        <int name="distribUpdateSoTimeout">${distribUpdateSoTimeout:600000}</int>
+        <int name="distribUpdateConnTimeout">${distribUpdateConnTimeout:60000}</int>
+        <str name="zkCredentialsProvider">${zkCredentialsProvider:org.apache.solr.common.cloud.DefaultZkCredentialsProvider}</str>
+        <str name="zkACLProvider">${zkACLProvider:org.apache.solr.common.cloud.DefaultZkACLProvider}</str>
+      </solrcloud>
+      <shardHandlerFactory name="shardHandlerFactory"
+        class="HttpShardHandlerFactory">
+        <int name="socketTimeout">${socketTimeout:600000}</int>
+        <int name="connTimeout">${connTimeout:60000}</int>
+      </shardHandlerFactory>
+    </solr>
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "solr-headless"
+  labels:
+    app.kubernetes.io/name: solr
+    app.kubernetes.io/instance: solr
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: solr-1.5.0
+spec:
+  clusterIP: "None"
+  ports:
+    - port: 8983
+      name: "solr-headless"
+  selector:
+    app.kubernetes.io/name: "solr"
+    app.kubernetes.io/instance: "solr"
+    app.kubernetes.io/component: "server"
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "solr-svc"
+  labels:
+    app.kubernetes.io/name: solr
+    app.kubernetes.io/instance: solr
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: solr-1.5.0
+  annotations:
+    {}
+spec:
+  type: "ClusterIP"
+  ports:
+    - port: 8983
+      name: "solr-client"
+  selector:
+    app.kubernetes.io/name: "solr"
+    app.kubernetes.io/instance: "solr"
+    app.kubernetes.io/component: "server"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: solr
+  labels:
+    app.kubernetes.io/name: solr
+    app.kubernetes.io/instance: solr
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: solr-1.5.0
+    app.kubernetes.io/component: server
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "solr"
+      app.kubernetes.io/instance: "solr"
+      app.kubernetes.io/component: "server"
+  serviceName: solr-headless
+  replicas: 1
+  updateStrategy:
+        type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "solr"
+        app.kubernetes.io/instance: "solr"
+        app.kubernetes.io/component: "server"
+      annotations:
+        {}
+    spec:      
+      securityContext:
+        fsGroup: 8983
+        runAsUser: 8983
+      affinity:
+        {}
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: solr-xml
+          configMap:
+            name: solr-config-map
+            items:
+              - key: solr.xml
+                path: solr.xml
+      initContainers:
+        - name: check-zk
+          image: busybox:latest
+          command:
+            - 'sh'
+            - '-c'
+            - |
+              COUNTER=0;
+              while [  $COUNTER -lt 120 ]; do
+                addr=$(nslookup -type=a zk-cs | grep "Address:" | awk 'NR>1 {print $2}')
+                if [ ! -z "$addr" ]; then
+                  while read -r line; do
+                    echo $line;
+                    mode=$(echo srvr | nc $line 2181 | grep "Mode");
+                    echo $mode;
+                    if [ "$mode" = "Mode: leader" ] || [ "$mode" = "Mode: standalone" ]; then
+                      echo "Found a leader!";
+                      exit 0;
+                    fi;
+                  done <<EOF
+              $addr
+              EOF
+                fi;
+                let COUNTER=COUNTER+1;
+                sleep 2;
+              done;
+              echo "Did NOT see a ZK leader after 240 secs!";
+              exit 1;
+        - name: "cp-solr-xml"
+          image: busybox:latest
+          command: ['sh', '-c', 'cp /tmp/solr.xml /tmp-config/solr.xml']
+          volumeMounts:
+            - name: "solr-xml"
+              mountPath: "/tmp"
+            - name: "solr-pvc"
+              mountPath: "/tmp-config"
+      containers:
+        - name: solr
+          image: "solr:8.4.0"
+          imagePullPolicy: IfNotPresent
+          resources:
+            {}
+          ports:
+            - containerPort: 8983
+              name: solr-client
+          env:
+            - name: "SOLR_JAVA_MEM"
+              value: "-Xms2g -Xmx3g"
+            - name: "SOLR_HOME"
+              value: "/opt/solr/server/home"
+            - name: "SOLR_PORT"
+              value: "8983"
+            - name: "POD_HOSTNAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: "SOLR_HOST"
+              value: "$(POD_HOSTNAME).solr-headless.default"
+            - name: "ZK_HOST"
+              value: "zk-cs:2181"
+            - name: "SOLR_LOG_LEVEL"
+              value: "INFO"
+
+          livenessProbe:
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            httpGet:
+              scheme: "HTTP"
+              path: /solr/admin/info/system
+              port: 8983
+          readinessProbe:
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            httpGet:
+              scheme: "HTTP"
+              path: /solr/admin/info/system
+              port: 8983
+          volumeMounts:
+            - name: solr-pvc
+              mountPath: /opt/solr/server/home
+
+  volumeClaimTemplates:
+    - metadata:
+        name: solr-pvc
+        annotations:
+          pv.beta.kubernetes.io/gid: "8983"
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
