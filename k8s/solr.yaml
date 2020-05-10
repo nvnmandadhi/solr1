@@ -104,9 +104,9 @@ spec:
       app.kubernetes.io/instance: "solr"
       app.kubernetes.io/component: "server"
   serviceName: solr-headless
-  replicas: 1
+  replicas: 2
   updateStrategy:
-        type: RollingUpdate
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -115,7 +115,7 @@ spec:
         app.kubernetes.io/component: "server"
       annotations:
         {}
-    spec:      
+    spec:
       securityContext:
         fsGroup: 8983
         runAsUser: 8983
@@ -167,7 +167,7 @@ spec:
               mountPath: "/tmp-config"
       containers:
         - name: solr
-          image: "solr:8.4.0"
+          image: "solr:8.4.1"
           imagePullPolicy: IfNotPresent
           resources:
             {}
@@ -178,7 +178,7 @@ spec:
             - name: "SOLR_JAVA_MEM"
               value: "-Xms2g -Xmx3g"
             - name: "SOLR_HOME"
-              value: "/opt/solr/server/home"
+              value: "/var/solr/data"
             - name: "SOLR_PORT"
               value: "8983"
             - name: "POD_HOSTNAME"
@@ -191,7 +191,6 @@ spec:
               value: "zk-cs:2181"
             - name: "SOLR_LOG_LEVEL"
               value: "INFO"
-
           livenessProbe:
             initialDelaySeconds: 45
             periodSeconds: 10
@@ -208,7 +207,7 @@ spec:
               port: 8983
           volumeMounts:
             - name: solr-pvc
-              mountPath: /opt/solr/server/home
+              mountPath: /var/solr/data
 
   volumeClaimTemplates:
     - metadata:

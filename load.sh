@@ -2,8 +2,11 @@
 
 set -e
 
-curl -XDELETE -k https://localhost:9200/test -u "elastic:$ES_PASSWORD"
-curl -XPUT -k https://localhost:9200/test -u "elastic:$ES_PASSWORD"
+nohup kubectl port-forward svc/solr-svc 8983:8983 > /dev/null
+nohup kubectl port-forward svc/zk-cs 2181:2181 > /dev/null
+
+solr rm -r /configs/* -z localhost:2181
+solr zk upconfig -d data1 -n data1-config -z localhost:2181
 
 generated_dir="$(date +%Y%m%d)"
 working_dir=$(pwd)
@@ -22,22 +25,19 @@ echo "Number of input files to process: $(ls | wc -l)"
 i=0
 for file in *.csv; do
   i=$((i + 1))
-  awk 'NR==1{$0=tolower($0)} 1' "$file" | sed -e '1s/ /_/g' | sed -e '1s/\//_/g' | csvtojson | jq -c .[] | tr -d '\r' | while read line; do
-    echo '{ "index" : {"_index" : "test"}}' >>"$working_dir/$generated_dir/data.json"
+  awk 'NR==1{$0=tolower($0)} 1' "$file" \
+  | sed -e '1s/ /_/g' \
+  | sed -e '1s/\//_/g' \
+  | csvtojson | jq -c .[] \
+  | tr -d '\r' | while read line; do
     echo "$line" >>"$working_dir/$generated_dir/data.json"
   done
 
-  curl -u "elastic:$ES_PASSWORD" \
-    -XPOST \
-    -s \
-    -H 'Content-Type: application/x-ndjson' \
-    -k 'https://localhost:9200/test/_bulk?pretty&refresh' \
-    --data-binary "@$working_dir/$generated_dir/data.json" \
-    -o /dev/null
+  post -c data1 "$working_dir/$generated_dir/data.json"
 
   true >"$working_dir/$generated_dir/data.json"
 
-  if [ $((i % 5)) -eq 0 ]; then
+  if [[ $((i % 5)) -eq 0 ]]; then
     echo "Processed and indexed $i input files"
   fi
 done
