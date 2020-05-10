@@ -22,25 +22,27 @@ echo "Number of input files to process: $(ls | wc -l)"
 i=0
 for file in *.csv; do
   i=$((i + 1))
-  csvtojson "$file" | jq -c .[] | tr -d '\r' | while read line; do
-    echo '{ "index" : {"_index" : "test" } }' >>"$working_dir/$generated_dir/data.json"
+  awk 'NR==1{$0=tolower($0)} 1' "$file" | sed -e '1s/ /_/g' | sed -e '1s/\//_/g' | csvtojson | jq -c .[] | tr -d '\r' | while read line; do
+    echo '{ "index" : {"_index" : "test"}}' >>"$working_dir/$generated_dir/data.json"
     echo "$line" >>"$working_dir/$generated_dir/data.json"
   done
 
   curl -u "elastic:$ES_PASSWORD" \
     -XPOST \
+    -s \
     -H 'Content-Type: application/x-ndjson' \
-    -k 'https://localhost:9200/test/_bulk?pretty' \
+    -k 'https://localhost:9200/test/_bulk?pretty&refresh' \
     --data-binary "@$working_dir/$generated_dir/data.json" \
-    -o /dev/null \
-    -I
+    -o /dev/null
 
-  mv "$working_dir/$generated_dir/data.json" "$working_dir/$generated_dir/data-$i.json"
   true >"$working_dir/$generated_dir/data.json"
 
-  if [ $((i % 10)) -eq 0 ]; then
+  if [ $((i % 5)) -eq 0 ]; then
     echo "Processed and indexed $i input files"
   fi
 done
 
+echo "*********** Indexing complete ***********"
 popd 2
+# shellcheck disable=SC2115
+rm -fr "$working_dir/$generated_dir"
