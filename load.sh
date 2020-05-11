@@ -21,6 +21,11 @@ for file in *.csv; do
   done
 
   post -c data data.json
+  # shellcheck disable=SC2181
+  if [[ "$?" -ne 0 ]]; then
+    echo "failed at $file"
+  fi
+
   rm -fr data.json
 
   if [[ $((i % 5)) -eq 0 ]]; then
