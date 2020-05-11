@@ -2,12 +2,6 @@
 
 set -e
 
-nohup kubectl port-forward svc/solr-svc 8983:8983 > /dev/null
-nohup kubectl port-forward svc/zk-cs 2181:2181 > /dev/null
-
-solr rm -r /configs/* -z localhost:2181
-solr zk upconfig -d data1 -n data1-config -z localhost:2181
-
 generated_dir="$(date +%Y%m%d)"
 working_dir=$(pwd)
 echo "Data will be stored in directory $working_dir/$generated_dir"
@@ -16,10 +10,10 @@ mkdir -p "$generated_dir"
 pushd "$generated_dir" && touch data.json && popd
 
 echo "Processing the input files and generating data to index"
-pushd temp || (mkdir temp && pushd temp)
-git pull || git clone git@github.com:CSSEGISandData/COVID-19.git
+git clone git@github.com:CSSEGISandData/COVID-19.git || echo "data is up-to-date"
 pushd ./COVID-19/csse_covid_19_data/csse_covid_19_daily_reports
 
+true >"$working_dir/failed.json"
 echo "Number of input files to process: $(ls | wc -l)"
 
 i=0
@@ -33,7 +27,11 @@ for file in *.csv; do
     echo "$line" >>"$working_dir/$generated_dir/data.json"
   done
 
-  post -c data1 "$working_dir/$generated_dir/data.json"
+  post -c data "$working_dir/$generated_dir/data.json"
+
+  if [[ $? -ne 0 ]]; then
+   "$working_dir/$generated_dir/data.json" >> "$working_dir/failed.json"
+  fi
 
   true >"$working_dir/$generated_dir/data.json"
 
@@ -43,6 +41,6 @@ for file in *.csv; do
 done
 
 echo "*********** Indexing complete ***********"
-popd 2
+popd
 # shellcheck disable=SC2115
 rm -fr "$working_dir/$generated_dir"
