@@ -126,6 +126,7 @@ spec:
         name: datadir
       spec:
         accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "local"
         resources:
           requests:
             storage: 5Gi
