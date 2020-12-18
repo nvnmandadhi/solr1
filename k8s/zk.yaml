@@ -118,14 +118,11 @@ spec:
           volumeMounts:
             - name: datadir
               mountPath: /var/lib/zookeeper
-      securityContext:
-        runAsUser: 1000
-        fsGroup: 1000
   volumeClaimTemplates:
     - metadata:
         name: datadir
       spec:
-        accessModes: [ "ReadWriteOnce" ]
+        accessModes: [ "ReadWriteMany" ]
         storageClassName: "local"
         resources:
           requests:
