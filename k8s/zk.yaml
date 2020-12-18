@@ -114,15 +114,9 @@ spec:
           volumeMounts:
             - name: datadir
               mountPath: /var/lib/zookeeper
-              emptyDir: {}
-#   volumeClaimTemplates:
-#     - metadata:
-#         name: datadir
-#       spec:
-#         accessModes: [ "ReadWriteMany" ]
-#         resources:
-#           requests:
-#             storage: 1Gi
+        volumes:
+          - name: datadir
+            emptyDir: {}
   selector:
     matchLabels:
       app: zk
