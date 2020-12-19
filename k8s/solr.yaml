@@ -129,6 +129,8 @@ spec:
             items:
               - key: solr.xml
                 path: solr.xml
+        - name: datadir
+          emptyDir: {}
       initContainers:
         - name: check-zk
           image: busybox:latest
@@ -206,17 +208,5 @@ spec:
               path: /solr/admin/info/system
               port: 8983
           volumeMounts:
-            - name: solr-pvc
+            - name: datadir
               mountPath: /var/solr/data
-
-  volumeClaimTemplates:
-    - metadata:
-        name: solr-pvc
-        annotations:
-          pv.beta.kubernetes.io/gid: "8983"
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 5Gi
